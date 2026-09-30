@@ -44,7 +44,7 @@ let emailEnProcesoAuth = "";
 
 // Estado Inicial de Convenios
 let conveniosData = [];
-let errorCargaConvenios = "Inicie sesión para consultar los convenios guardados.";
+let errorCargaConvenios = "Cargando convenios...";
 
 let empresasRegistradasData = [];
 
@@ -78,10 +78,10 @@ document.addEventListener("DOMContentLoaded", () => {
     matriculaPdfResizeTimer = setTimeout(renderizarPaginaMatricula, 120);
   });
   window.setInterval(() => {
-    if (usuarioSesion.autenticado && !document.hidden) cargarConveniosGuardados();
+    if (!document.hidden) cargarConveniosGuardados();
   }, 30000);
   document.addEventListener("visibilitychange", () => {
-    if (usuarioSesion.autenticado && !document.hidden) cargarConveniosGuardados();
+    if (!document.hidden) cargarConveniosGuardados();
   });
 });
 
@@ -227,7 +227,8 @@ function aplicarPermisosEnUI() {
     if (tabAdminUsuarios) tabAdminUsuarios.style.display = "none";
     if (tabEnvioJuridico) tabEnvioJuridico.style.display = "none";
     conveniosData = [];
-    errorCargaConvenios = "Inicie sesión para consultar los convenios guardados.";
+    errorCargaConvenios = "Cargando convenios...";
+    cargarConveniosGuardados();
   } else {
     if (btnTrigger) btnTrigger.textContent = "Cerrar Sesión";
     if (elEmail) elEmail.textContent = usuarioSesion.email;
@@ -251,11 +252,9 @@ function aplicarPermisosEnUI() {
     cargarConveniosGuardados();
   }
 
-  // El guardado usa la clave privada de Supabase y requiere un perfil editor.
+  // La creación está disponible para visitantes; las acciones internas siguen protegidas por rol.
   const btnNuevoConv = document.getElementById("btn-nuevo-convenio");
-  if (btnNuevoConv) {
-    btnNuevoConv.style.display = (usuarioSesion.autenticado && (usuarioSesion.rol === "admin" || usuarioSesion.rol === "editor")) ? "inline-flex" : "none";
-  }
+  if (btnNuevoConv) btnNuevoConv.style.display = "inline-flex";
   poblarFiltroResponsables();
   renderTablero();
   poblarSelectConveniosPaso2();
@@ -672,8 +671,10 @@ function renderTablero() {
 
 async function cargarConveniosGuardados() {
   try {
+    const headers = {};
+    if (usuarioSesion.accessToken) headers.Authorization = `Bearer ${usuarioSesion.accessToken}`;
     const respuesta = await fetch("/api/convenios", {
-      headers: { Authorization: `Bearer ${usuarioSesion.accessToken}` }
+      headers
     });
     const json = await respuesta.json().catch(() => ({}));
     if (!respuesta.ok || !json.ok || !Array.isArray(json.convenios)) {
@@ -1066,31 +1067,33 @@ function recolectarExpedienteDelFormulario() {
 }
 
 async function guardarExpedienteEnSupabase(empresa, archivos) {
-  const token = usuarioSesion.accessToken;
-  if (!token) throw new Error("Inicie sesión antes de cargar el expediente.");
-
-  const respuestaConfig = await fetch("/api/config/supabase");
-  const config = await respuestaConfig.json().catch(() => ({}));
-  if (!respuestaConfig.ok || !config.url || !config.anonKey || !config.bucket) {
-    throw new Error(config.error || "No se pudo obtener la configuración de almacenamiento.");
-  }
-
   const nit = String(empresa.nit || "").replace(/\D/g, "");
   const documentos = [];
   for (const documento of DOCUMENTOS_EXPEDIENTE) {
     const archivo = archivos[documento.campo];
     if (!archivo) continue;
 
-    const nombreSeguro = archivo.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 180);
-    const storagePath = `expedientes/${nit}/${documento.campo}__${nombreSeguro}`;
-    const rutaCodificada = storagePath.split("/").map(encodeURIComponent).join("/");
-    const respuestaArchivo = await fetch(`${config.url}/storage/v1/object/${encodeURIComponent(config.bucket)}/${rutaCodificada}`, {
+    const respuestaFirma = await fetch("/api/empresas/expediente/upload-url", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nit,
+        campo: documento.campo,
+        originalname: archivo.name,
+        mimetype: archivo.type || "application/octet-stream",
+        sizeBytes: archivo.size
+      })
+    });
+    const firma = await respuestaFirma.json().catch(() => ({}));
+    if (!respuestaFirma.ok || !firma.signedUrl || !firma.storagePath) {
+      throw new Error(firma.error || `No se pudo preparar la carga de ${documento.etiqueta}.`);
+    }
+
+    const respuestaArchivo = await fetch(firma.signedUrl, {
+      method: "PUT",
       headers: {
-        apikey: config.anonKey,
-        Authorization: `Bearer ${token}`,
         "Content-Type": archivo.type || "application/octet-stream",
-        "x-upsert": "true"
+        "x-upsert": "false"
       },
       body: archivo
     });
@@ -1100,7 +1103,7 @@ async function guardarExpedienteEnSupabase(empresa, archivos) {
     }
     documentos.push({
       campo: documento.campo,
-      storagePath,
+      storagePath: firma.storagePath,
       originalname: archivo.name,
       mimetype: archivo.type || "application/octet-stream",
       sizeBytes: archivo.size
@@ -1109,10 +1112,7 @@ async function guardarExpedienteEnSupabase(empresa, archivos) {
 
   const respuestaRegistro = await fetch("/api/empresas/expediente", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ empresa, documentos })
   });
   const resultado = await respuestaRegistro.json().catch(() => ({}));
@@ -1258,6 +1258,19 @@ async function guardarConvenio(e) {
     tipoEmpresa: dc.tipoEmpresa || "Privada",
     interventor: interventor
   };
+  const datosRegistro = {
+    razonSocial,
+    nit,
+    ciudad,
+    unidadRegional,
+    correo: correoEmpresa,
+    contacto: nombreContacto,
+    numeroContacto: modoEmpresaActual === 'nueva' ? valorDe("empresa-num-contacto") : (empObjRegistrada ? empObjRegistrada.numeroContacto || "" : ""),
+    interventor,
+    camara: camara && camara.datos ? { datos: camara.datos } : {},
+    responsable,
+    notas
+  };
 
   const textoBtnOriginal = btnSubmit ? btnSubmit.textContent : "";
   if (btnSubmit) {
@@ -1291,16 +1304,16 @@ async function guardarConvenio(e) {
   let resultadoCorreo = { ok: false };
   try {
     if (btnSubmit) btnSubmit.textContent = "Enviando correo...";
+    const headers = { "Content-Type": "application/json" };
+    if (usuarioSesion.accessToken) headers.Authorization = `Bearer ${usuarioSesion.accessToken}`;
     const resp = await fetch("/api/convenios/notificar", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${usuarioSesion.accessToken}`
-      },
+      headers,
       body: JSON.stringify({
         datos: datosCorreo,
         modoEmpresa: modoEmpresaActual,
-        nit: datosCorreo.nit
+        nit: datosCorreo.nit,
+        registro: datosRegistro
       })
     });
     const json = await resp.json().catch(() => ({}));
@@ -1331,22 +1344,8 @@ async function guardarConvenio(e) {
   try {
     const respuesta = await fetch("/api/convenios", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${usuarioSesion.accessToken}`
-      },
-      body: JSON.stringify({
-        razonSocial,
-        nit,
-        ciudad,
-        unidadRegional,
-        correo: correoEmpresa,
-        contacto: nombreContacto,
-        interventor,
-        camara: camara && camara.datos ? { datos: camara.datos } : {},
-        responsable,
-        notas
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...datosRegistro, ticketCorreo: resultadoCorreo.ticketCorreo })
     });
     const json = await respuesta.json().catch(() => ({}));
     if (!respuesta.ok || !json.ok || !json.id) {
@@ -1536,6 +1535,22 @@ function verDetalleModal(id) {
 
   const content = document.getElementById("detalle-convenio-content");
   if (!content) return;
+
+  if (conv.publico) {
+    content.innerHTML = `
+      <div class="form-grid-2" style="gap: 1rem; margin-bottom: 1rem;">
+        <div><strong>Código Convenio:</strong> ${escaparHtmlUI(conv.id)}</div>
+        <div><strong>Razón Social:</strong> ${escaparHtmlUI(conv.entidad)}</div>
+        <div><strong>NIT:</strong> ${escaparHtmlUI(conv.nit || 'N/A')}</div>
+        <div><strong>Etapa:</strong> ${Number(conv.etapaNumero) || 1}/5 - ${escaparHtmlUI(ETAPAS_NOMBRES[Number(conv.etapaNumero) || 1])}</div>
+        <div><strong>Estado:</strong> ${escaparHtmlUI(conv.estado || 'Activa')}</div>
+        <div><strong>Última actualización:</strong> ${conv.fechaEtapa ? new Date(conv.fechaEtapa).toLocaleDateString('es-CO') : 'N/A'}</div>
+      </div>
+      <p class="form-hint">Inicie sesión para consultar los detalles internos del convenio.</p>
+    `;
+    openModal('modal-detalle-convenio');
+    return;
+  }
 
   const numEtapa = conv.etapaNumero || 1;
   const puedeEditarConvenio = usuarioSesion.rol === 'admin' || usuarioSesion.rol === 'editor';

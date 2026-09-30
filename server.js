@@ -1,12 +1,15 @@
 require('dotenv').config();
 
+const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
+const { rateLimit } = require('express-rate-limit');
 
 const { extraerTextoPdf, extraerDatosCamara } = require('./lib/camara');
 const { construirCorreo } = require('./lib/correo');
+const { crearTicketCorreo, validarTicketCorreo } = require('./lib/ticketCorreo');
 const {
   CAMPOS_DOCUMENTO,
   nitKey,
@@ -38,15 +41,53 @@ const uploadExpediente = upload.fields(
 );
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.static(path.join(__dirname, 'public')));
+
+const limitarCargaPublica = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 50,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Se alcanzó el límite temporal de carga. Intente de nuevo más tarde.' }
+});
+const limitarEnvioPublico = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Se alcanzó el límite de envíos por hora desde esta conexión.' }
+});
+const limitarRegistroPublico = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Se alcanzó el límite de registros por hora desde esta conexión.' }
+});
 
 const escapeHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const correoValido = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean)
   .every((x) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x));
 
+function normalizarDatosRegistro(datos = {}) {
+  return {
+    razonSocial: String(datos.razonSocial || '').trim(),
+    nit: nitKey(datos.nit),
+    ciudad: String(datos.ciudad || '').trim(),
+    unidadRegional: String(datos.unidadRegional || '').trim(),
+    correo: String(datos.correo || '').trim(),
+    contacto: String(datos.contacto || '').trim(),
+    numeroContacto: String(datos.numeroContacto || '').trim(),
+    interventor: String(datos.interventor || '').trim(),
+    camara: datos.camara && typeof datos.camara === 'object' ? datos.camara : {},
+    responsable: String(datos.responsable || ''),
+    notas: String(datos.notas || '')
+  };
+}
+
 function crearTransporte() {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
   const puerto = Number(SMTP_PORT) || 587;
   return nodemailer.createTransport({
     host: SMTP_HOST,
@@ -165,28 +206,6 @@ async function exigirAdministrador(req) {
     throw error;
   }
   return perfil;
-}
-
-async function exigirUsuarioAutenticado(req, res, next) {
-  try {
-    req.perfil = await exigirPerfilAutenticado(req);
-    next();
-  } catch (err) {
-    res.status(err.status || 401).json({ error: err.message || 'Inicie sesión para consultar los convenios.' });
-  }
-}
-
-async function exigirEditorAdministrador(req, res, next) {
-  try {
-    const perfil = await exigirPerfilAutenticado(req);
-    if (!['admin', 'editor'].includes(perfil.role)) {
-      return res.status(403).json({ error: 'Solo administradores y editores pueden crear convenios.' });
-    }
-    req.perfil = perfil;
-    next();
-  } catch (err) {
-    res.status(err.status || 401).json({ error: err.message || 'Inicie sesión con un perfil autorizado para crear convenios.' });
-  }
 }
 
 app.post('/api/auth/otp/enviar', express.json({ limit: '10kb' }), async (req, res) => {
@@ -421,7 +440,48 @@ app.get('/api/config/supabase', (_req, res) => {
   res.json({ url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, bucket: 'convenio-documents' });
 });
 
-app.post('/api/empresas/expediente', exigirEditorAdministrador, express.json({ limit: '100kb' }), async (req, res) => {
+app.post('/api/empresas/expediente/upload-url', limitarCargaPublica, express.json({ limit: '10kb' }), async (req, res) => {
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    return res.status(500).json({ error: 'Falta configurar Supabase para cargar documentos.' });
+  }
+
+  const { nit: nitRecibido, campo, originalname, mimetype, sizeBytes } = req.body || {};
+  const nit = nitKey(nitRecibido);
+  const campoValido = CAMPOS_DOCUMENTO.some((documento) => documento.campo === campo);
+  const nombre = String(originalname || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 180);
+  const tamano = Number(sizeBytes);
+  if (!nit || !campoValido || !nombre || !Number.isFinite(tamano) || tamano <= 0 || tamano > 15 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Los datos del archivo no son válidos o exceden el límite de 15 MB.' });
+  }
+
+  const bucket = 'convenio-documents';
+  const storagePath = `expedientes/${nit}/${campo}__${crypto.randomUUID()}__${nombre}`;
+  const rutaCodificada = storagePath.split('/').map(encodeURIComponent).join('/');
+  try {
+    const respuesta = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/${bucket}/${rutaCodificada}`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_SECRET_KEY,
+        Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({})
+    });
+    const resultado = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok || !resultado.url) {
+      throw new Error(resultado.message || resultado.error || 'Supabase no pudo firmar la carga del archivo.');
+    }
+    const signedUrl = /^https?:\/\//i.test(resultado.url)
+      ? resultado.url
+      : `${SUPABASE_URL}/storage/v1${String(resultado.url).startsWith('/') ? resultado.url : `/${resultado.url}`}`;
+    res.json({ ok: true, signedUrl, storagePath });
+  } catch (err) {
+    console.error('Error firmando carga en Supabase Storage:', err.message);
+    res.status(502).json({ error: 'No se pudo preparar la carga del archivo en Supabase.' });
+  }
+});
+
+app.post('/api/empresas/expediente', limitarRegistroPublico, express.json({ limit: '100kb' }), async (req, res) => {
   if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
     return res.status(500).json({ error: 'Falta configurar Supabase para guardar el expediente.' });
   }
@@ -460,7 +520,7 @@ app.post('/api/empresas/expediente', exigirEditorAdministrador, express.json({ l
       original_name: String(documento.originalname),
       mime_type: String(documento.mimetype || 'application/octet-stream'),
       size_bytes: Number(documento.sizeBytes) || null,
-      uploaded_by: req.perfil.user_id
+      uploaded_by: null
     }));
     await solicitarSupabase('/rest/v1/documents?on_conflict=storage_path', {
       apiKey: SUPABASE_SECRET_KEY,
@@ -475,12 +535,22 @@ app.post('/api/empresas/expediente', exigirEditorAdministrador, express.json({ l
   }
 });
 
-app.get('/api/convenios', exigirUsuarioAutenticado, async (_req, res) => {
+app.get('/api/convenios', async (req, res) => {
   if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
     return res.status(500).json({ error: 'Falta configurar Supabase para consultar los convenios.' });
   }
 
   try {
+    let perfilAutenticado = false;
+    if (req.get('authorization')) {
+      try {
+        await exigirPerfilAutenticado(req);
+        perfilAutenticado = true;
+      } catch (err) {
+        if (err.status === 500) throw err;
+      }
+    }
+
     const queryConvenios = new URLSearchParams({
       select: 'id,company_id,stage_number,responsible,status,stage_started_at,notes,created_at',
       order: 'created_at.desc'
@@ -515,10 +585,17 @@ app.get('/api/convenios', exigirUsuarioAutenticado, async (_req, res) => {
         const empresa = porId.get(convenio.company_id) || {};
         const camara = empresa.camara_datos && typeof empresa.camara_datos === 'object' ? empresa.camara_datos : {};
         const datosCamara = camara.datos && typeof camara.datos === 'object' ? camara.datos : camara;
-        return {
+        const resumenPublico = {
           id: convenio.id,
           entidad: empresa.razon_social || '',
           nit: empresa.nit || '',
+          etapaNumero: Number(convenio.stage_number) || 1,
+          estado: convenio.status || 'Activa',
+          fechaEtapa: convenio.stage_started_at || convenio.created_at
+        };
+        if (!perfilAutenticado) return { ...resumenPublico, publico: true };
+        return {
+          ...resumenPublico,
           ciudad: empresa.ciudad || '',
           unidadRegional: empresa.unidad_regional || '',
           contacto: empresa.nombre_contacto || '',
@@ -526,9 +603,6 @@ app.get('/api/convenios', exigirUsuarioAutenticado, async (_req, res) => {
           interventor: empresa.interventor || '',
           representanteLegal: datosCamara.representanteLegal || 'N/A',
           tipoEmpresa: datosCamara.tipoEmpresa || 'Privada',
-          etapaNumero: Number(convenio.stage_number) || 1,
-          estado: convenio.status || 'Activa',
-          fechaEtapa: convenio.stage_started_at || convenio.created_at,
           responsable: convenio.responsible || '',
           notas: convenio.notes || '',
           adjuntos: documentosPorEmpresa.get(convenio.company_id) || []
@@ -541,16 +615,21 @@ app.get('/api/convenios', exigirUsuarioAutenticado, async (_req, res) => {
   }
 });
 
-app.post('/api/convenios', exigirEditorAdministrador, express.json({ limit: '20kb' }), async (req, res) => {
+app.post('/api/convenios', limitarRegistroPublico, express.json({ limit: '20kb' }), async (req, res) => {
   if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
     return res.status(500).json({ error: 'Falta configurar Supabase para guardar los convenios.' });
   }
 
   const datos = req.body || {};
-  const nit = nitKey(datos.nit);
-  const razonSocial = String(datos.razonSocial || '').trim();
+  const registro = normalizarDatosRegistro(datos);
+  const nit = registro.nit;
+  const razonSocial = registro.razonSocial;
+  const ticket = validarTicketCorreo(datos.ticketCorreo, SUPABASE_SECRET_KEY, registro);
   if (!nit || !razonSocial) {
     return res.status(400).json({ error: 'La razón social y el NIT son obligatorios para guardar el convenio.' });
+  }
+  if (!ticket) {
+    return res.status(403).json({ error: 'No se confirmó el envío del correo. El convenio no fue registrado.' });
   }
 
   try {
@@ -565,12 +644,13 @@ app.post('/api/convenios', exigirEditorAdministrador, express.json({ limit: '20k
         body: {
           nit,
           razon_social: razonSocial,
-          ciudad: String(datos.ciudad || ''),
-          unidad_regional: String(datos.unidadRegional || ''),
-          correo: String(datos.correo || ''),
-          nombre_contacto: String(datos.contacto || ''),
-          interventor: String(datos.interventor || ''),
-          camara_datos: datos.camara && typeof datos.camara === 'object' ? datos.camara : {}
+          ciudad: registro.ciudad,
+          unidad_regional: registro.unidadRegional,
+          correo: registro.correo,
+          nombre_contacto: registro.contacto,
+          numero_contacto: registro.numeroContacto,
+          interventor: registro.interventor,
+          camara_datos: registro.camara
         },
         prefer: 'return=representation'
       });
@@ -579,18 +659,17 @@ app.post('/api/convenios', exigirEditorAdministrador, express.json({ limit: '20k
 
     if (!empresa || !empresa.id) throw new Error('No se pudo localizar o crear la empresa en Supabase.');
 
-    const id = `CONV-${new Date().getFullYear()}-${Date.now()}`;
     const guardados = await solicitarSupabase('/rest/v1/agreements', {
       apiKey: SUPABASE_SECRET_KEY,
       method: 'POST',
       body: {
-        id,
+        id: ticket.id,
         company_id: empresa.id,
         stage_number: 1,
-        responsible: String(datos.responsable || ''),
+        responsible: registro.responsable,
         status: 'Activa',
         stage_started_at: new Date().toISOString(),
-        notes: String(datos.notas || '')
+        notes: registro.notas
       },
       prefer: 'return=representation'
     });
@@ -661,7 +740,7 @@ app.post('/api/empresas/documentos', uploadExpediente, async (req, res) => {
 });
 
 // 2) Envía el correo a Dayana (o al correo de prueba si MODO_PRUEBA=true)
-app.post('/api/convenios/notificar', exigirEditorAdministrador, express.json({ limit: '20kb' }), async (req, res) => {
+app.post('/api/convenios/notificar', limitarEnvioPublico, express.json({ limit: '20kb' }), async (req, res) => {
   let datos;
   try {
     datos = typeof req.body.datos === 'string' ? JSON.parse(req.body.datos || '{}') : (req.body.datos || {});
@@ -687,6 +766,15 @@ app.post('/api/convenios/notificar', exigirEditorAdministrador, express.json({ l
   const nitEmpresa = String(datos.nit || req.body.nit || '').trim();
   if (!nitKey(nitEmpresa)) {
     return res.status(400).json({ error: 'El NIT debe contener al menos un número. Revise el NIT ingresado para la empresa.' });
+  }
+  const registro = normalizarDatosRegistro(req.body.registro);
+  if (!registro.razonSocial || registro.nit !== nitKey(nitEmpresa)) {
+    return res.status(400).json({ error: 'Los datos para guardar el convenio no coinciden con el NIT del correo.' });
+  }
+  const razonSocialEnCorreo = String(datos.razonSocial || '').trim();
+  const razonSocialRegistrada = String(registro.camara.datos && registro.camara.datos.razonSocial || registro.razonSocial).trim();
+  if (nitKey(datos.nit) !== registro.nit || razonSocialEnCorreo !== razonSocialRegistrada) {
+    return res.status(400).json({ error: 'Los datos enviados por correo no coinciden con la empresa que se va a registrar.' });
   }
 
   const transporte = crearTransporte();
@@ -740,7 +828,8 @@ app.post('/api/convenios/notificar', exigirEditorAdministrador, express.json({ l
       ok: true,
       enviadoA: destinatario,
       modoPrueba: MODO_PRUEBA,
-      adjuntos: listaAdjuntos
+      adjuntos: listaAdjuntos,
+      ticketCorreo: crearTicketCorreo(SUPABASE_SECRET_KEY, registro)
     });
   } catch (err) {
     console.error('Error enviando correo:', err.message);
