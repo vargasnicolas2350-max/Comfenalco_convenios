@@ -15,6 +15,7 @@ const ticket = crearTicketCorreo(clave, registro, ahora);
 const payload = validarTicketCorreo(ticket, clave, registro, ahora + 1000);
 assert.ok(payload);
 assert.strictEqual(payload.nit, '9001234561');
+assert.strictEqual(payload.id, undefined);
 assert.strictEqual(validarTicketCorreo(ticket, clave, { ...registro, notas: 'Alteradas' }, ahora), null);
 assert.strictEqual(validarTicketCorreo(ticket, 'wrong-secret', registro, ahora), null);
 assert.strictEqual(validarTicketCorreo(ticket, clave, registro, ahora + 10 * 60 * 1000), null);

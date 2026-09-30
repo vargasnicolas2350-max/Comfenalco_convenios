@@ -659,11 +659,20 @@ app.post('/api/convenios', limitarRegistroPublico, express.json({ limit: '20kb' 
 
     if (!empresa || !empresa.id) throw new Error('No se pudo localizar o crear la empresa en Supabase.');
 
+    const id = await solicitarSupabase('/rest/v1/rpc/next_agreement_code', {
+      apiKey: SUPABASE_SECRET_KEY,
+      method: 'POST',
+      body: {}
+    });
+    if (typeof id !== 'string' || !/^CONV-\d{6}-\d{4,}$/.test(id)) {
+      throw new Error('Supabase no generó un consecutivo válido para el convenio.');
+    }
+
     const guardados = await solicitarSupabase('/rest/v1/agreements', {
       apiKey: SUPABASE_SECRET_KEY,
       method: 'POST',
       body: {
-        id: ticket.id,
+        id,
         company_id: empresa.id,
         stage_number: 1,
         responsible: registro.responsable,
@@ -679,6 +688,90 @@ app.post('/api/convenios', limitarRegistroPublico, express.json({ limit: '20kb' 
   } catch (err) {
     console.error('Error guardando convenio en Supabase:', err.message);
     res.status(err.status || 500).json({ error: err.message || 'No se pudo guardar el convenio en Supabase.' });
+  }
+});
+
+async function obtenerConvenioSupabase(id) {
+  const query = new URLSearchParams({
+    select: 'id,stage_number,notes',
+    id: `eq.${id}`,
+    limit: '1'
+  });
+  const convenios = await solicitarSupabase(`/rest/v1/agreements?${query}`, { apiKey: SUPABASE_SECRET_KEY });
+  return Array.isArray(convenios) ? convenios[0] || null : null;
+}
+
+async function actualizarEtapaConvenioSupabase(id, etapaActual, etapaNueva, estado, nota) {
+  const convenio = await obtenerConvenioSupabase(id);
+  if (!convenio) {
+    const error = new Error('No se encontró el convenio en Supabase.');
+    error.status = 404;
+    throw error;
+  }
+  if (Number(convenio.stage_number) !== etapaActual) {
+    const error = new Error(`El convenio ya cambió de etapa. La etapa actual es ${convenio.stage_number}.`);
+    error.status = 409;
+    throw error;
+  }
+
+  const fechaEtapa = new Date().toISOString();
+  const notasActualizadas = [convenio.notes, nota].filter(Boolean).join('\n');
+  const query = new URLSearchParams({
+    id: `eq.${id}`,
+    stage_number: `eq.${etapaActual}`
+  });
+  const actualizados = await solicitarSupabase(`/rest/v1/agreements?${query}`, {
+    apiKey: SUPABASE_SECRET_KEY,
+    method: 'PATCH',
+    body: {
+      stage_number: etapaNueva,
+      status: estado,
+      stage_started_at: fechaEtapa,
+      notes: notasActualizadas
+    },
+    prefer: 'return=representation'
+  });
+  const actualizado = Array.isArray(actualizados) ? actualizados[0] : null;
+  if (!actualizado) {
+    const error = new Error('No se pudo confirmar el cambio de etapa en Supabase.');
+    error.status = 409;
+    throw error;
+  }
+  return { etapaNumero: etapaNueva, estado, fechaEtapa, notas: notasActualizadas };
+}
+
+app.patch('/api/convenios/:id/etapa', express.json({ limit: '20kb' }), async (req, res) => {
+  let perfil;
+  try {
+    perfil = await exigirPerfilAutenticado(req);
+  } catch (err) {
+    return res.status(err.status || 401).json({ error: err.message || 'Inicie sesión para cambiar la etapa.' });
+  }
+
+  const etapaActual = Number(req.body.etapaActual);
+  const etapaNueva = Number(req.body.etapaNumero);
+  const puedeAvanzarEditor = ['admin', 'editor'].includes(perfil.role) && etapaActual >= 2 && etapaNueva === etapaActual + 1;
+  const puedeAvanzarJuridico = perfil.role === 'juridico' && etapaActual === 2 && etapaNueva === 3;
+  if (!puedeAvanzarEditor && !puedeAvanzarJuridico) {
+    return res.status(403).json({ error: 'No tiene permiso para realizar este cambio de etapa.' });
+  }
+  if (etapaNueva < 2 || etapaNueva > 5) {
+    return res.status(400).json({ error: 'La etapa indicada no es válida.' });
+  }
+
+  const estado = etapaNueva === 5 ? 'Activa' : 'Revision';
+  try {
+    const resultado = await actualizarEtapaConvenioSupabase(
+      req.params.id,
+      etapaActual,
+      etapaNueva,
+      estado,
+      String(req.body.notas || '')
+    );
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    console.error('Error avanzando etapa del convenio:', err.message);
+    res.status(err.status || 500).json({ error: err.message || 'No se pudo guardar el cambio de etapa.' });
   }
 });
 
@@ -841,6 +934,16 @@ app.post('/api/convenios/notificar', limitarEnvioPublico, express.json({ limit: 
 app.post('/api/convenios/enviar-juridica',
   upload.fields([{ name: 'archivo1', maxCount: 1 }, { name: 'archivo2', maxCount: 1 }]),
   async (req, res) => {
+    let perfil;
+    try {
+      perfil = await exigirPerfilAutenticado(req);
+    } catch (err) {
+      return res.status(err.status || 401).json({ error: err.message || 'Inicie sesión para enviar a Jurídica.' });
+    }
+    if (!['admin', 'juridico'].includes(perfil.role)) {
+      return res.status(403).json({ error: 'Solo Administrador o Jurídico puede enviar a Jurídica.' });
+    }
+
     const archivo1 = req.files && req.files.archivo1 && req.files.archivo1[0];
     const archivo2 = req.files && req.files.archivo2 && req.files.archivo2[0];
     if (!archivo1 || !archivo2) {
@@ -848,6 +951,18 @@ app.post('/api/convenios/enviar-juridica',
     }
 
     const { idConvenio = '', entidad = '', nit = '', correoDestino = '', asunto = '', mensaje = '' } = req.body;
+    if (!idConvenio) return res.status(400).json({ error: 'Seleccione un convenio válido.' });
+
+    try {
+      const convenio = await obtenerConvenioSupabase(idConvenio);
+      if (!convenio) return res.status(404).json({ error: 'No se encontró el convenio en Supabase.' });
+      if (Number(convenio.stage_number) !== 1) {
+        return res.status(409).json({ error: 'El convenio ya no está en la Etapa 1; no se enviará un correo duplicado.' });
+      }
+    } catch (err) {
+      console.error('Error validando etapa antes del envío a Jurídica:', err.message);
+      return res.status(err.status || 500).json({ error: err.message || 'No se pudo validar el convenio.' });
+    }
 
     // Producción: usa el correo escrito en el formulario (o MAIL_JURIDICA si viene vacío).
     // Prueba: siempre MAIL_PRUEBA_JURIDICA.
@@ -906,15 +1021,27 @@ app.post('/api/convenios/enviar-juridica',
 
     try {
       await transporte.sendMail(mensajeCorreo);
-      res.json({ ok: true, enviadoA: destinatario, modoPrueba: MODO_PRUEBA });
+      try {
+        const fechaEtapa = new Date().toISOString();
+        const notasEtapa = `Correo enviado a Jurídica (${destinatario}). Asunto: ${asuntoFinal}. Adjuntos: ${archivo1.originalname}, ${archivo2.originalname}.`;
+        const etapa = await actualizarEtapaConvenioSupabase(idConvenio, 1, 2, 'Revision', notasEtapa);
+        res.json({
+          ok: true,
+          enviadoA: destinatario,
+          modoPrueba: MODO_PRUEBA,
+          etapaNumero: etapa.etapaNumero,
+          fechaEtapa: etapa.fechaEtapa || fechaEtapa,
+          notas: etapa.notas
+        });
+      } catch (err) {
+        console.error('El correo salió, pero falló el avance a etapa 2:', err.message);
+        res.status(502).json({
+          error: `El correo fue aceptado por SMTP, pero no se pudo guardar el avance a etapa 2 en Supabase: ${err.message}`
+        });
+      }
     } catch (err) {
       console.error('Error enviando correo a Jurídica:', err.message);
-      res.status(200).json({
-        ok: true,
-        warning: 'El convenio quedó registrado, pero no se pudo enviar el correo a Jurídica. Revise las credenciales SMTP.',
-        enviadoA: destinatario,
-        modoPrueba: MODO_PRUEBA
-      });
+      res.status(502).json({ error: 'No se pudo enviar el correo a Jurídica. El convenio no avanzó de etapa.' });
     }
   });
 

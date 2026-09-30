@@ -1462,16 +1462,20 @@ async function procesarEnvioPaso2(e) {
   }
 
   try {
-    const respuesta = await fetch("/api/convenios/enviar-juridica", { method: "POST", body: formData });
+    const respuesta = await fetch("/api/convenios/enviar-juridica", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${usuarioSesion.accessToken}` },
+      body: formData
+    });
     const json = await respuesta.json().catch(() => ({}));
     if (!respuesta.ok || !json.ok) throw new Error(json.error || "No se pudo enviar el correo a Jurídica.");
 
-    conv.etapaNumero = 2;
-    conv.etapaNombre = ETAPAS_NOMBRES[2];
-    conv.etapa = ETAPAS_NOMBRES[2];
+    conv.etapaNumero = Number(json.etapaNumero) || 2;
+    conv.etapaNombre = ETAPAS_NOMBRES[conv.etapaNumero];
+    conv.etapa = conv.etapaNombre;
     conv.estado = "Revision";
-    conv.fechaEtapa = new Date().toISOString();
-    conv.notas = `Correo enviado a ${json.enviadoA}. Asunto: ${asunto}. Mensaje: ${mensaje || 'Sin detalles'}. Adjuntos enviados: ${file1.name}, ${file2.name}`;
+    conv.fechaEtapa = json.fechaEtapa || new Date().toISOString();
+    conv.notas = json.notas || conv.notas;
     conv.adjuntos = conv.adjuntos || [];
     if (!conv.adjuntos.includes(file1.name)) conv.adjuntos.push(file1.name);
     if (!conv.adjuntos.includes(file2.name)) conv.adjuntos.push(file2.name);
@@ -1494,7 +1498,7 @@ async function procesarEnvioPaso2(e) {
   }
 }
 
-function avanzarEtapaConvenio(id) {
+async function avanzarEtapaConvenio(id) {
   const conv = conveniosData.find(c => c.id === id);
   if (!conv) return;
   const etapaActual = Number(conv.etapaNumero) || 1;
@@ -1509,23 +1513,37 @@ function avanzarEtapaConvenio(id) {
     return;
   }
 
-  if (conv.etapaNumero < 5) {
-    conv.etapaNumero += 1;
-    conv.etapaNombre = ETAPAS_NOMBRES[conv.etapaNumero];
-    conv.etapa = ETAPAS_NOMBRES[conv.etapaNumero];
-    conv.fechaEtapa = new Date().toISOString();
+  if (conv.etapaNumero >= 5) {
+    alert(`El convenio ${id} ya ha finalizado todas las etapas del ciclo de vida.`);
+    return;
+  }
 
-    if (conv.etapaNumero === 5) {
-      conv.etapa = 'Activo';
-      conv.estado = 'Activa';
-    }
+  const etapaNueva = etapaActual + 1;
+  try {
+    const respuesta = await fetch(`/api/convenios/${encodeURIComponent(id)}/etapa`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${usuarioSesion.accessToken}`
+      },
+      body: JSON.stringify({ etapaActual, etapaNumero: etapaNueva })
+    });
+    const json = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok || !json.ok) throw new Error(json.error || "Supabase no confirmó el cambio de etapa.");
+
+    conv.etapaNumero = Number(json.etapaNumero);
+    conv.etapaNombre = ETAPAS_NOMBRES[conv.etapaNumero];
+    conv.etapa = conv.etapaNumero === 5 ? 'Activo' : conv.etapaNombre;
+    conv.estado = json.estado || (conv.etapaNumero === 5 ? 'Activa' : 'Revision');
+    conv.fechaEtapa = json.fechaEtapa || new Date().toISOString();
+    conv.notas = json.notas || conv.notas;
 
     renderTablero();
     poblarSelectConveniosPaso2();
     verDetalleModal(id);
     alert(`Convenio ${id} avanzado con éxito a la Etapa ${conv.etapaNumero}: ${conv.etapaNombre}`);
-  } else {
-    alert(`El convenio ${id} ya ha finalizado todas las etapas del ciclo de vida.`);
+  } catch (error) {
+    alert(`No se guardó el avance de etapa en Supabase.\n\n${error.message || 'Error guardando la etapa.'}`);
   }
 }
 
