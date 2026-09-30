@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Gestión de Convenios - Comfenalco Antioquia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- Navegación Superior -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <div class="logo-box">
+          <svg class="comfenalco-logo-svg" viewBox="0 0 320 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M152 26 C152 20.4772 156.477 16 162 16 C167.523 16 172 20.4772 172 26 C156.477 36 152 31.5228 152 26 Z" fill="#005A36"/>
+            <path d="M141 23 C145 35 152 42 162 42 C172 42 179 35 183 23" stroke="#005A36" stroke-width="7" stroke-linecap="round" fill="none"/>
+            <text x="10" y="72" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="52" fill="#005A36" letter-spacing="-1.5">Comfenalco</text>
+            <text x="52" y="102" font-family="'Plus Jakarta Sans', sans-serif" font-weight="700" font-size="28" fill="#005A36" letter-spacing="4.5">Antioquia</text>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Portal de Convenios</h1>
+          <p>Plataforma Integrada de Gestión</p>
+        </div>
+      </div>
+
+      <nav class="main-nav">
+        <button class="nav-btn active" data-tab="convenios" onclick="switchTab('convenios', event)">
+          <i data-lucide="file-text"></i> <span>Convenios</span>
+        </button>
+        <button class="nav-btn" data-tab="tablero" onclick="switchTab('tablero', event)">
+          <i data-lucide="layout-dashboard"></i> <span>Tablero General</span>
+        </button>
+        <button class="nav-btn" data-tab="matricula" onclick="switchTab('matricula', event)">
+          <i data-lucide="building-2"></i> <span>Matrícula</span>
+        </button>
+        
+        <!-- PESTAÑA RESTRINGIDA: Envío Jurídico (Paso 2) -->
+        <button class="nav-btn tab-restringida-juridico" id="tab-nav-envio-juridica" data-tab="envio-juridica" onclick="switchTab('envio-juridica', event)" style="display: none;">
+          <i data-lucide="mail"></i> <span>Envío Jurídico (Paso 2)</span>
+        </button>
+
+        <button class="nav-btn solo-admin" id="tab-nav-admin-usuarios" data-tab="admin-usuarios" onclick="switchTab('admin-usuarios', event)" style="display: none;">
+          <i data-lucide="users-round"></i> <span>Usuarios Autorizados</span>
+        </button>
+      </nav>
+
+      <!-- SECCIÓN DE PERFIL Y LOGIN -->
+      <div class="user-profile">
+        <button class="btn btn-secondary btn-sm" id="btn-login-trigger" onclick="abrirModalAuth()" style="border-radius: 20px; font-weight: 700;">
+          <i data-lucide="key-round"></i> <span id="lbl-btn-login">Ingreso Corporativo</span>
+        </button>
+        <div class="avatar" id="header-avatar">VS</div>
+        <div class="user-info">
+          <span class="user-name" id="header-user-name">Visitante</span>
+          <span class="user-role" id="header-user-email">Sin autenticar (Solo lectura)</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenido Principal -->
+  <main class="main-content">
+    
+    <!-- CONVENIOS -->
+    <section id="sec-convenios" class="content-section active">
+      <div class="section-header">
+        <div>
+          <h2>Convenios</h2>
+          <p class="section-desc">Registra un convenio nuevo con una empresa aliada.</p>
+        </div>
+        <button class="btn btn-primary" id="btn-nuevo-convenio" onclick="openModal('modal-nuevo-convenio')" style="display: inline-flex;">
+          <i data-lucide="plus"></i> Nuevo Convenio
+        </button>
+      </div>
+    </section>
+    <!-- TABLERO GENERAL -->
+    <section id="sec-tablero" class="content-section">
+      <div class="section-header">
+        <div>
+          <h2>Resumen del Estado de Convenios</h2>
+          <p class="section-desc">Monitoreo en tiempo real de convenios y procesos jurídicos.</p>
+        </div>
+      </div>
+
+      <div class="metrics-grid stage-metrics-grid">
+        <div class="metric-card">
+          <div class="metric-icon blue"><i data-lucide="file-check"></i></div>
+          <div class="metric-data">
+            <span class="metric-number" id="kpi-etapa-1">0</span>
+            <span class="metric-label">1. Creación de hoja de ruta y minuta</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon orange"><i data-lucide="user-round-check"></i></div>
+          <div class="metric-data">
+            <span class="metric-number" id="kpi-etapa-2">0</span>
+            <span class="metric-label">2. Asignación de asesor jurídico</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon green"><i data-lucide="file-check-2"></i></div>
+          <div class="metric-data">
+            <span class="metric-number" id="kpi-etapa-3">0</span>
+            <span class="metric-label">3. Validación de documentos y firmas</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon purple"><i data-lucide="database"></i></div>
+          <div class="metric-data">
+            <span class="metric-number" id="kpi-etapa-4">0</span>
+            <span class="metric-label">4. Creación en SAP y marcación en CRM</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon blue"><i data-lucide="users-round"></i></div>
+          <div class="metric-data">
+            <span class="metric-number" id="kpi-etapa-5">0</span>
+            <span class="metric-label">5. Carga de beneficiarios, registros y afiliaciones</span>
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-icon orange"><i data-lucide="clock-alert"></i></div>
+          <div class="metric-data">
+            <span class="metric-number" id="kpi-ans-vencido">0</span>
+            <span class="metric-label">ANS vencidos</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header filters-toolbar">
+          <h3>Convenios Recientes</h3>
+          <div class="filter-controls">
+            <select id="filter-tablero-responsable" class="form-input" aria-label="Filtrar por responsable" onchange="filterConvenios()">
+              <option value="">Todos los responsables</option>
+            </select>
+            <label class="filter-date" for="filter-tablero-desde">
+              <span>Desde</span>
+              <input type="date" id="filter-tablero-desde" class="form-input" onchange="filterConvenios()">
+            </label>
+            <label class="filter-date" for="filter-tablero-hasta">
+              <span>Hasta</span>
+              <input type="date" id="filter-tablero-hasta" class="form-input" onchange="filterConvenios()">
+            </label>
+            <div class="search-box">
+              <i data-lucide="search" class="search-icon"></i>
+              <input type="search" id="search-convenios" class="search-input" placeholder="Buscar empresa, NIT o código..." aria-label="Buscar empresa, NIT o código" oninput="filterConvenios()">
+            </div>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Entidad / Empresa</th>
+                <th>NIT</th>
+                <th>Etapa Actual</th>
+                <th>Responsable</th>
+                <th>Fecha Etapa</th>
+                <th>ANS</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-convenios-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="sec-matricula" class="content-section">
+      <div class="section-header">
+        <div>
+          <h2>Matrícula</h2>
+          <p class="section-desc">Portafolio de Servicios 2026.</p>
+        </div>
+        <div class="matricula-pdf-actions">
+          <a class="btn btn-secondary btn-sm" href="./Portafolio%20de%20Servicios%202026%20V2%20(Dic%202025)%20(1).pdf" target="_blank" rel="noopener" title="Abrir PDF original">
+            <i data-lucide="external-link"></i> Abrir PDF
+          </a>
+          <a class="btn btn-secondary btn-sm" href="./Portafolio%20de%20Servicios%202026%20V2%20(Dic%202025)%20(1).pdf" download title="Descargar portafolio">
+            <i data-lucide="download"></i> Descargar
+          </a>
+        </div>
+      </div>
+      <div class="matricula-pdf-toolbar" role="toolbar" aria-label="Controles del portafolio PDF">
+        <div class="matricula-pdf-navigation">
+          <button type="button" class="pdf-control" onclick="cambiarPaginaMatricula(-1)" aria-label="Página anterior" title="Página anterior">
+            <i data-lucide="chevron-left"></i>
+          </button>
+          <span class="pdf-page-indicator"><span id="matricula-pdf-page">1</span> / <span id="matricula-pdf-total">--</span></span>
+          <button type="button" class="pdf-control" onclick="cambiarPaginaMatricula(1)" aria-label="Página siguiente" title="Página siguiente">
+            <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+        <div class="matricula-pdf-zoom">
+          <button type="button" class="pdf-control" onclick="ajustarZoomMatricula(-1)" aria-label="Alejar" title="Alejar">
+            <i data-lucide="minus"></i>
+          </button>
+          <span id="matricula-pdf-zoom-level">100%</span>
+          <button type="button" class="pdf-control" onclick="ajustarZoomMatricula(1)" aria-label="Acercar" title="Acercar">
+            <i data-lucide="plus"></i>
+          </button>
+          <button type="button" class="pdf-control pdf-fit-control" onclick="ajustarZoomMatricula(0)" aria-label="Ajustar página" title="Ajustar página">
+            <i data-lucide="maximize"></i>
+          </button>
+        </div>
+      </div>
+      <div class="matricula-pdf-stage" id="matricula-pdf-stage">
+        <canvas class="matricula-pdf-page" id="matricula-pdf-canvas" aria-label="Página del portafolio"></canvas>
+        <p class="matricula-pdf-status" id="matricula-pdf-status" role="status">Cargando portafolio...</p>
+      </div>
+    </section>
+
+    <!-- ENVÍO JURÍDICO (PASO 2) -->
+    <section id="sec-envio-juridica" class="content-section">
+      <div class="section-header">
+        <div>
+          <h2>Asignación de asesor jurídico (Paso 2)</h2>
+          <p class="section-desc">Adjunta la minuta y la hoja de ruta para solicitar la asignación del asesor jurídico.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <form id="form-envio-paso2" onsubmit="procesarEnvioPaso2(event)">
+          <div class="form-section">
+            <h4>1. Selección de Convenio</h4>
+            <div class="form-group">
+              <label>Convenio en Etapa 1 *</label>
+              <select id="paso2-select-convenio" class="form-input" required></select>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>2. Datos de la solicitud</h4>
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Correo Electrónico Destino *</label>
+                <input type="email" id="paso2-correo-destino" class="form-input" placeholder="ejemplo@juridico.com" required>
+              </div>
+              <div class="form-group">
+                <label>Asunto del Mensaje</label>
+                <input type="text" id="paso2-asunto" class="form-input" value="Solicitud de Asignación de Asesor Jurídico - Paso 2" required>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Observaciones o Mensaje Adicional</label>
+              <textarea id="paso2-mensaje" class="form-input" rows="2" placeholder="Notas sobre los archivos o especificaciones para jurídica..."></textarea>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <h4>3. Documentos Adjuntos Requeridos (2 Archivos Obligatorios) *</h4>
+            <div class="alert-info">
+              <i data-lucide="paperclip"></i>
+              <span>Adjunta la minuta borrador y la hoja de ruta para solicitar la asignación del asesor (ANS: 36 horas).</span>
+            </div>
+
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Archivo 1: Minuta del Convenio (.pdf / .docx) *</label>
+                <input type="file" id="paso2-file-1" class="form-input" accept=".pdf,.doc,.docx" required>
+              </div>
+              <div class="form-group">
+                <label>Archivo 2: Hoja de Ruta Firmada (.pdf / .xlsx) *</label>
+                <input type="file" id="paso2-file-2" class="form-input" accept=".pdf,.xls,.xlsx" required>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem;">
+              <button type="submit" class="btn btn-primary">
+              <i data-lucide="send"></i> Enviar solicitud y pasar al paso 2 (36h ANS)
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="sec-admin-usuarios" class="content-section">
+      <div class="section-header">
+        <div>
+          <h2>Usuarios Autorizados</h2>
+          <p class="section-desc">Administra los correos y perfiles con acceso al portal.</p>
+        </div>
+      </div>
+      <div class="admin-users-notice">
+        La lista actual es temporal: sus cambios no se conservan al reiniciar y aún no se sincronizan con la autorización OTP del servidor.
+      </div>
+      <div class="panel">
+        <h3 class="admin-users-title">Agregar usuario</h3>
+        <div class="admin-users-form">
+          <div class="form-group">
+            <label for="admin-nuevo-email">Correo electrónico</label>
+            <input type="email" id="admin-nuevo-email" class="form-input" placeholder="usuario@dominio.com">
+          </div>
+          <div class="form-group">
+            <label for="admin-nuevo-rol">Perfil</label>
+            <select id="admin-nuevo-rol" class="form-input">
+              <option value="editor">Editor</option>
+              <option value="juridico">Envío Jurídico</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="agregarOActualizarUsuarioRol()">
+            <i data-lucide="user-plus"></i> Guardar usuario
+          </button>
+        </div>
+      </div>
+      <div class="panel admin-users-list">
+        <div class="admin-users-toolbar">
+          <h3>Listado de correos</h3>
+          <input type="search" id="buscar-usuario-autorizado" class="form-input" placeholder="Buscar correo" aria-label="Buscar correo autorizado" oninput="renderTablaAutorizados()">
+        </div>
+        <div class="table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Correo autorizado</th>
+                <th>Perfil</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-autorizados-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: AUTENTICACIÓN CON OTP -->
+  <div id="modal-auth-otp" class="modal">
+    <div class="modal-content" style="max-width: 450px;">
+      <div class="modal-header">
+        <div>
+          <h3>Autenticación con OTP</h3>
+          <p class="modal-subtitle">Ingrese su correo institucional registrado para recibir su código de acceso.</p>
+        </div>
+        <button class="close-btn" onclick="closeModal('modal-auth-otp')">&times;</button>
+      </div>
+
+      <div id="step-auth-email">
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Correo Electrónico Institucional *</label>
+          <input type="email" id="auth-email-input" class="form-input" placeholder="correo@comfenalcoantioquia.com" required>
+        </div>
+        <div class="modal-footer" style="padding: 1rem 0 0 0;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-auth-otp')">Cancelar</button>
+          <button type="button" class="btn btn-primary" onclick="enviarCodigoOTP()">Enviar OTP</button>
+        </div>
+      </div>
+
+      <div id="step-auth-otp" style="display: none;">
+        <div class="alert-info" style="margin-top: 1rem;">
+          <i data-lucide="mail-check"></i>
+          <span>Se envió el código de verificación a <strong id="auth-otp-destination"></strong>.</span>
+        </div>
+        <div class="form-group" style="margin-top: 1rem;">
+          <label>Código OTP (6 dígitos) *</label>
+          <input type="text" id="auth-otp-input" class="form-input" placeholder="Ej: 123456" maxlength="6" style="letter-spacing: 4px; font-weight: 700; text-align: center; font-size: 1.2rem;">
+        </div>
+        <div class="modal-footer" style="padding: 1rem 0 0 0;">
+          <button type="button" class="btn btn-secondary" onclick="resetFormAuth()">Atrás</button>
+          <button type="button" class="btn btn-secondary" onclick="enviarCodigoOTP()">Reenviar código</button>
+          <button type="button" class="btn btn-primary" onclick="validarCodigoOTP()">Verificar e Ingresar</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: NUEVO CONVENIO -->
+  <div id="modal-nuevo-convenio" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3>Nuevo Convenio</h3>
+          <p class="modal-subtitle">Registra la empresa aliada y solicita la Hoja de Ruta.</p>
+        </div>
+        <button class="close-btn" onclick="closeModal('modal-nuevo-convenio')">&times;</button>
+      </div>
+
+      <form id="form-nuevo-convenio" onsubmit="guardarConvenio(event)">
+        <div class="form-section">
+          <h4>Empresa Aliada</h4>
+          <div class="tipo-empresa-toggle">
+            <button type="button" class="btn-toggle active" id="btn-tipo-registrada" onclick="toggleTipoEmpresa('registrada')">Empresa ya registrada</button>
+            <button type="button" class="btn-toggle" id="btn-tipo-nueva" onclick="toggleTipoEmpresa('nueva')">Registrar empresa desde 0</button>
+          </div>
+
+          <div id="container-empresa-registrada" class="toggle-content">
+            <div class="form-group">
+              <label>Seleccionar Empresa Registrada</label>
+              <select id="select-empresa-registrada" class="form-input" onchange="alSeleccionarEmpresaRegistrada(this.value)"></select>
+            </div>
+            <div class="empresa-registrada-grid">
+              <div class="form-grid-2">
+                <div class="form-group">
+                  <label>Unidad Regional</label>
+                  <input type="text" id="reg-empresa-unidad-regional" class="form-input" placeholder="Ej: Valle de Aburrá">
+                </div>
+                <div class="form-group">
+                  <label>Interventor(a)</label>
+                  <input type="text" id="reg-empresa-interventor" class="form-input" placeholder="Ej: María Gómez">
+                </div>
+              </div>
+
+              <aside id="editor-documentos-empresa" class="doc-edit-panel" style="display: none;">
+                <h5>Actualizar documento</h5>
+                <div class="form-group">
+                  <label for="documento-empresa-editar">Documento</label>
+                  <select id="documento-empresa-editar" class="form-input" onchange="seleccionarDocumentoEdicion()">
+                    <option value="">Seleccione un documento</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="archivo-empresa-editar">Nuevo archivo</label>
+                  <input type="file" id="archivo-empresa-editar" class="form-input" onchange="analizarCamaraEdicion(this)">
+                </div>
+                <p id="estado-camara-edicion" class="form-hint" style="display: none;"></p>
+                <div id="datos-camara-edicion" class="camara-datos" style="display: none;">
+                  <p class="camara-datos-titulo">Datos leídos de la Cámara de Comercio</p>
+                  <div class="form-grid-2">
+                    <div class="form-group">
+                      <label for="edicion-cam-razon-social">Razón social</label>
+                      <input type="text" id="edicion-cam-razon-social" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label for="edicion-cam-nit">NIT</label>
+                      <input type="text" id="edicion-cam-nit" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label for="edicion-cam-representante">Representante legal</label>
+                      <input type="text" id="edicion-cam-representante" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label for="edicion-cam-cedula">Cédula</label>
+                      <input type="text" id="edicion-cam-cedula" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label for="edicion-cam-tipo-empresa">Tipo de empresa</label>
+                      <select id="edicion-cam-tipo-empresa" class="form-input">
+                        <option value="Privada">Privada</option>
+                        <option value="Pública">Pública</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="actualizarDocumentoEmpresa()">Guardar documento</button>
+              </aside>
+            </div>
+          </div>
+
+          <div id="container-empresa-nueva" class="toggle-content" style="display: none;">
+            <div class="form-grid-2">
+              <div class="form-group">
+                <label>Razón Social *</label>
+                <input type="text" id="empresa-razon-social" class="form-input" placeholder="Ej: Distribuidora XYZ S.A.S">
+              </div>
+              <div class="form-group">
+                <label>NIT *</label>
+                <input type="text" id="empresa-nit" class="form-input" placeholder="Ej: 900123456-1">
+              </div>
+              <div class="form-group">
+                <label>Ciudad *</label>
+                <input type="text" id="empresa-ciudad" class="form-input" placeholder="Ej: Medellín">
+              </div>
+              <div class="form-group">
+                <label>Correo Electrónico *</label>
+                <input type="email" id="empresa-correo" class="form-input" placeholder="contacto@empresa.com">
+              </div>
+              <div class="form-group">
+                <label>Unidad Regional *</label>
+                <input type="text" id="empresa-unidad-regional" class="form-input" placeholder="Escriba la Unidad Regional">
+              </div>
+              <div class="form-group">
+                <label>Interventor(a) *</label>
+                <input type="text" id="empresa-interventor" class="form-input" placeholder="Ej: María Gómez">
+              </div>
+              <div class="form-group">
+                <label>Nombre del Contacto *</label>
+                <input type="text" id="empresa-nombre-contacto" class="form-input" placeholder="Ej: Carlos Pérez">
+              </div>
+              <div class="form-group">
+                <label>Número de Contacto *</label>
+                <input type="tel" id="empresa-num-contacto" class="form-input" placeholder="Ej: +57 300 123 4567">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <h4>Responsables y Notas</h4>
+          <div class="form-group">
+            <label>Responsable Inicial *</label>
+            <select id="convenio-responsable" class="form-input" required>
+              <option value="">Seleccione un responsable...</option>
+              <option value="Laura Restrepo">Laura Restrepo</option>
+              <option value="Andrés Goméz">Andrés Goméz</option>
+              <option value="Marcela Ruiz">Marcela Ruiz</option>
+              <option value="Juan Pablo Vélez">Juan Pablo Vélez</option>
+              <option value="Diana Cardona">Diana Cardona</option>
+              <option value="Carlos Mejía">Carlos Mejía</option>
+              <option value="Paula Ortiz">Paula Ortiz</option>
+              <option value="Santiago Duque">Santiago Duque</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Notas para las Áreas</label>
+            <textarea id="convenio-notas" class="form-input" rows="3" placeholder="Contexto del convenio, beneficios solicitudes, urgencias..."></textarea>
+          </div>
+        </div>
+
+        <div class="form-section" id="section-documentacion" style="display: none;">
+          <h4>Documentación Inicial Obligatoria</h4>
+          <div class="alert-info">
+            <i data-lucide="info"></i>
+            <span>Para la creación de nuevos convenios es obligatorio adjuntar el expediente de documentos completo.</span>
+          </div>
+
+          <div class="docs-checklist">
+            <div class="doc-group">
+              <h5>Documentos Legales Obligatorios *</h5>
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-camara" value="Cámara de Comercio" disabled> Cámara de Comercio actualizada *</label>
+                  <input type="file" id="file-camara" class="doc-file-input" accept="application/pdf,.pdf" onchange="validarCheckAdjunto(this, 'chk-camara'); analizarCamara(this)">
+                </div>
+                <p id="camara-estado" class="form-hint" style="display: none;"></p>
+                <div id="camara-datos" class="camara-datos" style="display: none;">
+                  <p class="camara-datos-titulo">Datos para la Hoja de Ruta (revísalos antes de registrar)</p>
+                  <div class="form-grid-2">
+                    <div class="form-group">
+                      <label>Razón social (Cámara de Comercio)</label>
+                      <input type="text" id="cam-razon-social" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label>NIT</label>
+                      <input type="text" id="cam-nit" class="form-input" placeholder="Ej: 900123456-1">
+                    </div>
+                    <div class="form-group">
+                      <label>Representante legal</label>
+                      <input type="text" id="cam-representante" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label>Cédula</label>
+                      <input type="text" id="cam-cedula" class="form-input">
+                    </div>
+                    <div class="form-group">
+                      <label>Tipo de empresa</label>
+                      <select id="cam-tipo-empresa" class="form-input">
+                        <option value="Privada">Privada</option>
+                        <option value="Pública">Pública</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-rut" value="RUT" disabled> RUT *</label>
+                  <input type="file" id="file-rut" class="doc-file-input" accept="application/pdf,.pdf" onchange="validarCheckAdjunto(this, 'chk-rut')">
+                </div>
+              </div>
+
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-cedula" value="Cédula Representante Legal" disabled> Cédula del representante legal *</label>
+                  <input type="file" id="file-cedula" class="doc-file-input" accept="application/pdf,.pdf" onchange="validarCheckAdjunto(this, 'chk-cedula')">
+                </div>
+              </div>
+            </div>
+
+            <div class="doc-group">
+              <h5>Formatos Obligatorios *</h5>
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-inhabilidades" value="Formato de Inhabilidades" disabled> Formato de Inhabilidades e Incompatividades *</label>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="descargarFormatoInhabilidades()"><i data-lucide="download"></i> Descargar</button>
+                </div>
+                <div class="doc-file-row">
+                  <input type="file" id="file-inhabilidades" class="doc-file-input" onchange="validarCheckAdjunto(this, 'chk-inhabilidades')">
+                </div>
+              </div>
+
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-codigo-etica" value="Código de Ética" disabled> Aceptación del Código de Ética y Conducta *</label>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="descargarCodigoEtica()"><i data-lucide="download"></i> Descargar</button>
+                </div>
+                <div class="doc-file-row">
+                  <input type="file" id="file-codigo-etica" class="doc-file-input" onchange="validarCheckAdjunto(this, 'chk-codigo-etica')">
+                </div>
+              </div>
+
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-tratamiento-datos" value="Tratamiento de Datos" disabled> Formato de Tratamiento de Datos *</label>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="descargarTratamientoDatos()"><i data-lucide="download"></i> Descargar</button>
+                </div>
+                <div class="doc-file-row">
+                  <input type="file" id="file-tratamiento-datos" class="doc-file-input" onchange="validarCheckAdjunto(this, 'chk-tratamiento-datos')">
+                </div>
+              </div>
+
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-manual-contratacion" value="Manual de Contratación" disabled> Autorización y aceptación del Manual de Contratación *</label>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="descargarManualContratacion()"><i data-lucide="download"></i> Descargar</button>
+                </div>
+                <div class="doc-file-row">
+                  <input type="file" id="file-manual-contratacion" class="doc-file-input" onchange="validarCheckAdjunto(this, 'chk-manual-contratacion')">
+                </div>
+              </div>
+            </div>
+
+            <div class="doc-group">
+              <h5>Estudio SARLAFT Obligatorio *</h5>
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-rub" value="RUB" disabled> RUB (Registro Único de Beneficiarios Finales) *</label>
+                  <input type="file" id="file-rub" class="doc-file-input" onchange="validarCheckAdjunto(this, 'chk-rub')">
+                </div>
+              </div>
+
+              <div class="doc-item-container">
+                <div class="doc-row">
+                  <label><input type="checkbox" class="doc-checkbox" id="chk-composicion" value="Composición Accionaria" disabled> Formato de Composición Accionaria *</label>
+                  <input type="file" id="file-composicion" class="doc-file-input" onchange="validarCheckAdjunto(this, 'chk-composicion')">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modal-nuevo-convenio')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Registrar Convenio (Etapa 1: Hoja de Ruta)</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: DETALLE DE CONVENIO -->
+  <div id="modal-detalle-convenio" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3>Detalle del Convenio</h3>
+          <p class="modal-subtitle">Trazabilidad de etapas, expediente y responsables.</p>
+        </div>
+        <button class="close-btn" onclick="closeModal('modal-detalle-convenio')">&times;</button>
+      </div>
+      <div id="detalle-convenio-content"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modal-detalle-convenio')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-editar-convenio" class="modal">
+    <div class="modal-content modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3>Editar convenio</h3>
+          <p class="modal-subtitle">Actualiza los datos del convenio sin cambiar su etapa actual.</p>
+        </div>
+        <button class="close-btn" type="button" onclick="cancelarEdicionConvenio()" aria-label="Cerrar edición">&times;</button>
+      </div>
+      <form id="form-editar-convenio" onsubmit="guardarEdicionConvenio(event)">
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label for="editar-convenio-razon-social">Razón social *</label>
+            <input type="text" id="editar-convenio-razon-social" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-nit">NIT *</label>
+            <input type="text" id="editar-convenio-nit" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-ciudad">Ciudad *</label>
+            <input type="text" id="editar-convenio-ciudad" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-regional">Unidad regional</label>
+            <input type="text" id="editar-convenio-regional" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-contacto">Nombre del contacto</label>
+            <input type="text" id="editar-convenio-contacto" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-correo">Correo de contacto *</label>
+            <input type="email" id="editar-convenio-correo" class="form-input" required>
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-interventor">Interventor(a)</label>
+            <input type="text" id="editar-convenio-interventor" class="form-input">
+          </div>
+          <div class="form-group">
+            <label for="editar-convenio-responsable">Responsable *</label>
+            <input type="text" id="editar-convenio-responsable" class="form-input" required>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="editar-convenio-notas">Notas</label>
+          <textarea id="editar-convenio-notas" class="form-input" rows="3"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="cancelarEdicionConvenio()">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar cambios</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p class="footer-copy">&copy; 2026 Comfenalco Antioquia. Todos los derechos reservados.</p>
+      
+      <div class="supersubsidio-badge" title="Vigilado Superintendencia del Subsidio Familiar">
+        <div class="supersubsidio-escudo">
+          <svg viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M50 10 C40 2 30 12 20 18 C30 22 40 20 50 25 C60 20 70 22 80 18 C70 12 60 2 50 10 Z" fill="#4B5563"/>
+            <path d="M22 24 Q50 30 78 24" stroke="#4B5563" stroke-width="3" fill="none"/>
+            <path d="M25 32 H75 V85 C75 102 50 115 50 115 C50 115 25 102 25 85 Z" fill="#FFFFFF" stroke="#4B5563" stroke-width="4"/>
+            <line x1="25" y1="52" x2="75" y2="52" stroke="#4B5563" stroke-width="3"/>
+            <line x1="25" y1="72" x2="75" y2="72" stroke="#4B5563" stroke-width="3"/>
+            <circle cx="50" cy="42" r="4" fill="#4B5563"/>
+            <path d="M35 44 Q30 38 38 38" stroke="#4B5563" stroke-width="2"/>
+            <path d="M65 44 Q70 38 62 38" stroke="#4B5563" stroke-width="2"/>
+            <path d="M50 67 C45 67 45 58 50 58 C55 58 55 67 50 67 Z" fill="#4B5563"/>
+            <path d="M35 80 Q50 76 65 80" stroke="#4B5563" stroke-width="2" fill="none"/>
+            <polygon points="42,88 46,82 50,88" fill="#4B5563"/>
+            <polygon points="56,92 60,86 64,92" fill="#4B5563"/>
+          </svg>
+        </div>
+        
+        <div class="bandera-colombia">
+          <div class="amarillo"></div>
+          <div class="azul"></div>
+          <div class="rojo"></div>
+        </div>
+
+        <div class="supersubsidio-texto">
+          <span class="vigilado">VIGILADO</span>
+          <span class="entidad">SuperSubsidio</span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/vendor/pdfjs/pdf.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
