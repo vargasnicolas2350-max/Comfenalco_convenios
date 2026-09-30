@@ -77,6 +77,12 @@ document.addEventListener("DOMContentLoaded", () => {
     clearTimeout(matriculaPdfResizeTimer);
     matriculaPdfResizeTimer = setTimeout(renderizarPaginaMatricula, 120);
   });
+  window.setInterval(() => {
+    if (usuarioSesion.autenticado && !document.hidden) cargarConveniosGuardados();
+  }, 30000);
+  document.addEventListener("visibilitychange", () => {
+    if (usuarioSesion.autenticado && !document.hidden) cargarConveniosGuardados();
+  });
 });
 
 // ==========================================
